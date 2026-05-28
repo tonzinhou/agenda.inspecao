@@ -76,8 +76,8 @@
     <div class="card">
         <h3>Resumo de Horas</h3>
         <div class="resumo-horas">
-            <div class="resumo-item">Semana<div id="total-semana">0h 00m</div></div>
-            <div class="resumo-item">Mês<div id="total-mes">0h 00m</div></div>
+            <div class="resumo-item">Semana Atual<div id="total-semana">0h 00m</div></div>
+            <div class="resumo-item">Mês Atual<div id="total-mes">0h 00m</div></div>
         </div>
     </div>
 
@@ -98,13 +98,12 @@
         </div>
     </div>
 </div>
+
 <script>
-    // Mudança de nome da variável para garantir exclusividade absoluta no escopo global
     const meuProjetoUrl = "https://usdmnyeemisxnxailosy.supabase.co";
     const minhaChaveAnon = "sb_publishable_KtBU6Ly-TaPxqLFvWajtQA_ohtedqfS";
     const conexaoSupabase = window.supabase.createClient(meuProjetoUrl, minhaChaveAnon);
 
-    // Inicializa os inputs com a data de hoje e hora atual do sistema
     function inicializarCamposDataHora() {
         const agora = new Date();
         const dataHoje = agora.toISOString().split('T')[0];
@@ -114,7 +113,6 @@
         document.getElementById('hora-ponto').value = horaAtual;
     }
 
-    // FUNÇÃO PARA REGISTRAR O PONTO
     async function registrarPonto(coluna) {
         const dataSelecionada = document.getElementById('data-ponto').value;
         const horaSelecionada = document.getElementById('hora-ponto').value + ":00"; 
@@ -126,7 +124,6 @@
             return;
         }
 
-        // Tenta buscar se já existe registro na data selecionada
         const { data: dadosExistentes } = await conexaoSupabase
             .from('registros_ponto')
             .select('id')
@@ -136,7 +133,6 @@
         let erro;
 
         if (dadosExistentes) {
-            // Se já existe o dia, atualiza a coluna do botão correspondente
             const dadosUpdate = { [coluna]: horaSelecionada, almoco_fulltime: isFullTime };
             if(coluna === 'saida_casa') dadosUpdate.meio_transporte = transporte;
             
@@ -146,10 +142,8 @@
                 .eq('data', dataSelecionada);
             erro = error;
         } else {
-            // Se for o primeiro registro desse dia específico
             const { error } = await conexaoSupabase
-                .from('registros_ponto')
-                .insert([{
+                .from('insert', [{
                     data: dataSelecionada,
                     [coluna]: horaSelecionada,
                     meio_transporte: transporte,
@@ -167,7 +161,25 @@
         }
     }
 
-    // FUNÇÃO PARA BUSCAR DADOS E CALCULAR RELATÓRIOS
+    // FUNÇÃO QUE CAPTURA OS LIMITES DA SEGUNDA E DOMINGO DA SEMANA ATUAL
+    function obterLimitesSemanaAtual() {
+        const atual = new Date();
+        const diaSemana = atual.getDay(); // 0 = Domingo, 1 = Segunda, etc.
+        
+        // Ajusta para segunda-feira ser o dia 1 da semana
+        const distanciaParaSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
+        
+        const segunda = new Date(atual);
+        segunda.setDate(atual.getDate() + distanciaParaSegunda);
+        segunda.setHours(0,0,0,0);
+        
+        const domingo = new Date(segunda);
+        domingo.setDate(segunda.getDate() + 6);
+        domingo.setHours(23,59,59,999);
+        
+        return { segunda, domingo };
+    }
+
     async function carregarHistoricoREmRelatorios() {
         const { data: registros, error } = await conexaoSupabase
             .from('registros_ponto')
@@ -182,14 +194,20 @@
         let minutosSemana = 0;
         let minutosMes = 0;
 
+        const { segunda, domingo } = obterLimitesSemanaAtual();
+        const hojeData = new Date();
+        const mesAtual = hojeData.getMonth();
+        const anoAtual = hojeData.getFullYear();
+
         registros.forEach(r => {
             let textoTotalDia = "--:--";
+            let diferencaMinutos = 0;
             
             if (r.saida_casa && r.chegada_casa) {
                 const [h1, m1] = r.saida_casa.split(':').map(Number);
                 const [h2, m2] = r.chegada_casa.split(':').map(Number);
                 
-                let diferencaMinutos = (h2 * 60 + m2) - (h1 * 60 + m1);
+                diferencaMinutos = (h2 * 60 + m2) - (h1 * 60 + m1);
                 
                 if (!r.almoco_fulltime) {
                     diferencaMinutos -= 60; // Desconta 1h de almoço
@@ -199,13 +217,25 @@
                     const hrs = Math.floor(diferencaMinutos / 60);
                     const mins = diferencaMinutos % 60;
                     textoTotalDia = `${hrs}h ${mins.toString().padStart(2, '0')}m`;
-
-                    minutosMes += diferencaMinutos;
-                    minutosSemana += diferencaMinutos;
+                } else {
+                    diferencaMinutos = 0;
                 }
             }
 
-            const dataFormatada = new Date(r.data + 'T00:00:00').toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
+            // SEGMENTAÇÃO INTELIGENTE POR DATA
+            const dataObjeto = new Date(r.data + 'T00:00:00');
+
+            // 1. Verifica se pertence à semana atual (entre a segunda e o domingo vigentes)
+            if (dataObjeto >= segunda && dataObjeto <= domingo) {
+                minutosSemana += diferencaMinutos;
+            }
+
+            // 2. Verifica se pertence ao mês e ano vigentes
+            if (dataObjeto.getMonth() === mesAtual && dataObjeto.getFullYear() === anoAtual) {
+                minutosMes += diferencaMinutos;
+            }
+
+            const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
             tbody.innerHTML += `
                 <tr>
                     <td>${dataFormatada}</td>
@@ -219,7 +249,6 @@
         document.getElementById('total-mes').innerText = `${Math.floor(minutosMes / 60)}h ${(minutosMes % 60).toString().padStart(2, '0')}m`;
     }
 
-    // Inicialização automática das funções
     inicializarCamposDataHora();
     carregarHistoricoREmRelatorios();
 </script>
