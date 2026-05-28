@@ -100,10 +100,10 @@
 </div>
 
 <script>
-    // CREDENCIAIS DO SUPABASE INJETADAS COM SUCESSO
+    // CREDENCIAIS DO SUPABASE CONFIGURADAS - DECLARADAS APENAS UMA VEZ
     const SUPABASE_URL = "https://usdmnyeemisxnxailosy.supabase.co";
     const SUPABASE_KEY = "sb_publishable_KtBU6Ly-TaPxqLFvWajtQA_ohtedqfS";
-    const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // Inicializa os inputs com a data de hoje e hora atual do sistema
     function inicializarCamposDataHora() {
@@ -118,7 +118,7 @@
     // FUNÇÃO PARA REGISTRAR O PONTO
     async function registrar(coluna) {
         const dataSelecionada = document.getElementById('data-ponto').value;
-        const horaSelecionada = document.getElementById('hora-ponto').value + ":00"; // Formato hh:mm:ss
+        const horaSelecionada = document.getElementById('hora-ponto').value + ":00"; 
         const transporte = document.getElementById('transporte').value;
         const isFullTime = document.getElementById('fulltime').checked;
 
@@ -220,7 +220,7 @@
         document.getElementById('total-mes').innerText = `${Math.floor(minutosMes / 60)}h ${(minutosMes % 60).toString().padStart(2, '0')}m`;
     }
 
-    // Inicializa ao abrir a página
+    // Inicialização automática das funções
     inicializarCamposDataHora();
     carregarHistoricoREmRelatorios();
 </script>
