@@ -103,7 +103,7 @@
     // CREDENCIAIS DO SUPABASE CONFIGURADAS - DECLARADAS APENAS UMA VEZ
     const SUPABASE_URL = "https://usdmnyeemisxnxailosy.supabase.co";
     const SUPABASE_KEY = "sb_publishable_KtBU6Ly-TaPxqLFvWajtQA_ohtedqfS";
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     // Inicializa os inputs com a data de hoje e hora atual do sistema
     function inicializarCamposDataHora() {
