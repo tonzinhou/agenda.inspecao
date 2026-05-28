@@ -12,6 +12,7 @@
             --card: #ffffff;
             --text: #1e293b;
             --success: #16a34a;
+            --excel: #107c41;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
         body { background-color: var(--background); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; }
@@ -22,6 +23,7 @@
         button { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: background 0.2s; width: 100%; }
         button:active { transform: scale(0.98); }
         .btn-success { background: var(--success); }
+        .btn-excel { background: var(--excel); margin-top: 15px; }
         .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
         .input-group { margin-bottom: 15px; display: flex; flex-direction: column; gap: 5px; }
         select, input { padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 1rem; width: 100%; }
@@ -79,6 +81,7 @@
             <div class="resumo-item">Semana Atual<div id="total-semana">0h 00m</div></div>
             <div class="resumo-item">Mês Atual<div id="total-mes">0h 00m</div></div>
         </div>
+        <button onclick="exportarParaExcel()" class="btn-excel">🟢 Exportar Planilha Excel</button>
     </div>
 
     <div class="card">
@@ -143,7 +146,8 @@
             erro = error;
         } else {
             const { error } = await conexaoSupabase
-                .from('insert', [{
+                .from('registros_ponto')
+                .insert([{
                     data: dataSelecionada,
                     [coluna]: horaSelecionada,
                     meio_transporte: transporte,
@@ -161,12 +165,9 @@
         }
     }
 
-    // FUNÇÃO QUE CAPTURA OS LIMITES DA SEGUNDA E DOMINGO DA SEMANA ATUAL
     function obterLimitesSemanaAtual() {
         const atual = new Date();
-        const diaSemana = atual.getDay(); // 0 = Domingo, 1 = Segunda, etc.
-        
-        // Ajusta para segunda-feira ser o dia 1 da semana
+        const diaSemana = atual.getDay(); 
         const distanciaParaSegunda = diaSemana === 0 ? -6 : 1 - diaSemana;
         
         const segunda = new Date(atual);
@@ -210,7 +211,7 @@
                 diferencaMinutos = (h2 * 60 + m2) - (h1 * 60 + m1);
                 
                 if (!r.almoco_fulltime) {
-                    diferencaMinutos -= 60; // Desconta 1h de almoço
+                    diferencaMinutos -= 60; 
                 }
 
                 if (diferencaMinutos > 0) {
@@ -222,15 +223,12 @@
                 }
             }
 
-            // SEGMENTAÇÃO INTELIGENTE POR DATA
             const dataObjeto = new Date(r.data + 'T00:00:00');
 
-            // 1. Verifica se pertence à semana atual (entre a segunda e o domingo vigentes)
             if (dataObjeto >= segunda && dataObjeto <= domingo) {
                 minutosSemana += diferencaMinutos;
             }
 
-            // 2. Verifica se pertence ao mês e ano vigentes
             if (dataObjeto.getMonth() === mesAtual && dataObjeto.getFullYear() === anoAtual) {
                 minutosMes += diferencaMinutos;
             }
@@ -247,6 +245,38 @@
 
         document.getElementById('total-semana').innerText = `${Math.floor(minutosSemana / 60)}h ${(minutosSemana % 60).toString().padStart(2, '0')}m`;
         document.getElementById('total-mes').innerText = `${Math.floor(minutosMes / 60)}h ${(minutosMes % 60).toString().padStart(2, '0')}m`;
+    }
+
+    // FUNÇÃO EXCLUSIVA PARA EXPORTAÇÃO EXCEL (FORMATO CSV COMPATÍVEL)
+    async function exportarParaExcel() {
+        const { data: registros, error } = await conexaoSupabase
+            .from('registros_ponto')
+            .select('*')
+            .order('data', { ascending: false });
+
+        if (error || !registros || registros.length === 0) {
+            alert("Nenhum dado encontrado para exportar.");
+            return;
+        }
+
+        // Configura o cabeçalho com BOM para garantir os acentos corretos no Excel em português
+        let conteudoCSV = "\uFEFF"; 
+        conteudoCSV += "Data;Saída Casa;Chegada Trabalho;Saída Trabalho;Chegada Casa;Sem Almoço (Full Time);Transporte\n";
+
+        registros.forEach(r => {
+            conteudoCSV += `${r.data};${r.saida_casa || ""};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${r.chegada_casa || ""};${r.almoco_fulltime ? "Sim" : "Não"};${r.meio_transporte || ""}\n`;
+        });
+
+        const blob = new Blob([conteudoCSV], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const linkDownload = document.createElement("a");
+        
+        linkDownload.setAttribute("href", url);
+        linkDownload.setAttribute("download", `Controle_de_Ponto_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '_')}.csv`);
+        document.body.appendChild(linkDownload);
+        
+        linkDownload.click();
+        document.body.removeChild(linkDownload);
     }
 
     inicializarCamposDataHora();
