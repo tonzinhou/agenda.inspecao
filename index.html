@@ -66,10 +66,10 @@
         </div>
 
         <div class="grid-botoes">
-            <button onclick="registrar('saida_casa')">🏠 Saí de Casa</button>
-            <button onclick="registrar('chegada_trabalho')">🏢 Cheguei ao Trabalho</button>
-            <button onclick="registrar('saida_trabalho')">🛠️ Saí do Trabalho</button>
-            <button onclick="registrar('chegada_casa')" class="btn-success">🏁 Cheguei em Casa</button>
+            <button onclick="registrarPonto('saida_casa')">🏠 Saí de Casa</button>
+            <button onclick="registrarPonto('chegada_trabalho')">🏢 Cheguei ao Trabalho</button>
+            <button onclick="registrarPonto('saida_trabalho')">🛠️ Saí do Trabalho</button>
+            <button onclick="registrarPonto('chegada_casa')" class="btn-success">🏁 Cheguei em Casa</button>
         </div>
     </div>
 
@@ -100,10 +100,10 @@
 </div>
 
 <script>
-    // CREDENCIAIS DO SUPABASE CORRIGIDAS
-    const SUPABASE_URL = "https://usdmnyeemisxnxailosy.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_KtBU6Ly-TaPxqLFvWajtQA_ohtedqfS";
-    const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Mudança de nome da variável para garantir exclusividade absoluta no escopo global
+    const meuProjetoUrl = "https://usdmnyeemisxnxailosy.supabase.co";
+    const minhaChaveAnon = "sb_publishable_KtBU6Ly-TaPxqLFvWajtQA_ohtedqfS";
+    const conexaoSupabase = window.supabase.createClient(meuProjetoUrl, minhaChaveAnon);
 
     // Inicializa os inputs com a data de hoje e hora atual do sistema
     function inicializarCamposDataHora() {
@@ -116,7 +116,7 @@
     }
 
     // FUNÇÃO PARA REGISTRAR O PONTO
-    async function registrar(coluna) {
+    async function registrarPonto(coluna) {
         const dataSelecionada = document.getElementById('data-ponto').value;
         const horaSelecionada = document.getElementById('hora-ponto').value + ":00"; 
         const transporte = document.getElementById('transporte').value;
@@ -128,7 +128,7 @@
         }
 
         // Tenta buscar se já existe registro na data selecionada
-        const { data: dadosExistentes } = await supabase
+        const { data: dadosExistentes } = await conexaoSupabase
             .from('registros_ponto')
             .select('id')
             .eq('data', dataSelecionada)
@@ -141,14 +141,14 @@
             const dadosUpdate = { [coluna]: horaSelecionada, almoco_fulltime: isFullTime };
             if(coluna === 'saida_casa') dadosUpdate.meio_transporte = transporte;
             
-            const { error } = await supabase
+            const { error } = await conexaoSupabase
                 .from('registros_ponto')
                 .update(dadosUpdate)
                 .eq('data', dataSelecionada);
             erro = error;
         } else {
             // Se for o primeiro registro desse dia específico
-            const { error } = await supabase
+            const { error } = await conexaoSupabase
                 .from('registros_ponto')
                 .insert([{
                     data: dataSelecionada,
@@ -170,7 +170,7 @@
 
     // FUNÇÃO PARA BUSCAR DADOS E CALCULAR RELATÓRIOS
     async function carregarHistoricoREmRelatorios() {
-        const { data: registros, error } = await supabase
+        const { data: registros, error } = await conexaoSupabase
             .from('registros_ponto')
             .select('*')
             .order('data', { ascending: false });
