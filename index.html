@@ -28,6 +28,7 @@
         .input-group { margin-bottom: 15px; display: flex; flex-direction: column; gap: 5px; }
         select, input { padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 1rem; width: 100%; }
         .switch-container { display: flex; align-items: center; justify-content: space-between; margin: 15px 0; }
+        .painel-almoco-condicional { background: #f1f5f9; padding: 15px; border-radius: 8px; margin-top: 10px; display: none; border-left: 4px solid var(--success); }
         .resumo-horas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; text-align: center; }
         .resumo-item { background: #f1f5f9; padding: 10px; border-radius: 8px; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
@@ -62,16 +63,25 @@
             </select>
         </div>
 
-        <div class="switch-container">
-            <span>Disponível Full Time (Sem Almoço)</span>
-            <input type="checkbox" id="fulltime" style="width: auto; transform: scale(1.3);">
-        </div>
-
         <div class="grid-botoes">
             <button onclick="registrarPonto('saida_casa')">🏠 Saí de Casa</button>
             <button onclick="registrarPonto('chegada_trabalho')">🏢 Cheguei ao Trabalho</button>
             <button onclick="registrarPonto('saida_trabalho')">🛠️ Saí do Trabalho</button>
-            <button onclick="registrarPonto('chegada_casa')" class="btn-success">🏁 Cheguei em Casa</button>
+            <button onclick="dispararFimJornada()" class="btn-success">🏁 Cheguei em Casa</button>
+        </div>
+
+        <div id="painel-almoco" class="painel-almoco-condicional">
+            <div class="switch-container" style="margin: 0 0 10px 0;">
+                <span style="font-weight: bold;">Teve intervalo de Almoço hoje?</span>
+                <input type="checkbox" id="teve-almoco" onchange="alternarCampoMinutos()" style="width: auto; transform: scale(1.3);">
+            </div>
+            
+            <div id="grupo-minutos-almoco" class="input-group" style="display: none; margin-bottom: 10px;">
+                <label for="tempo-almoco">Duração do Almoço (em minutos):</label>
+                <input type="number" id="tempo-almoco" value="60" min="0" placeholder="Ex: 60">
+            </div>
+
+            <button onclick="confirmarFimJornadaComAlmoco()" style="background: var(--success); padding: 10px; font-size: 0.9rem;">Confirmar e Salvar Fim de Jornada</button>
         </div>
     </div>
 
@@ -114,13 +124,42 @@
         
         document.getElementById('data-ponto').value = dataHoje;
         document.getElementById('hora-ponto').value = horaAtual;
+        
+        // Reseta o painel condicional de almoço
+        document.getElementById('painel-almoco').style.display = 'none';
+        document.getElementById('teve-almoco').checked = false;
+        document.getElementById('grupo-minutos-almoco').style.display = 'none';
     }
 
-    async function registrarPonto(coluna) {
+    // Exibe o bloco condicional de almoço ao clicar no botão de chegar em casa
+    function dispararFimJornada() {
+        document.getElementById('painel-almoco').style.display = 'block';
+        window.scrollTo({ top: document.getElementById('painel-almoco').offsetTop, behavior: 'smooth' });
+    }
+
+    // Mostra/oculta o campo numérico de minutos com base no checkbox de almoço
+    function alternarCampoMinutos() {
+        const teveAlmoco = document.getElementById('teve-almoco').checked;
+        document.getElementById('grupo-minutos-almoco').style.display = teveAlmoco ? 'flex' : 'none';
+    }
+
+    // Processa a gravação definitiva da chegada em casa junto com os minutos coletados
+    async function confirmarFimJornadaComAlmoco() {
+        const teveAlmoco = document.getElementById('teve-almoco').checked;
+        let minutosDesconto = 0;
+
+        if (teveAlmoco) {
+            minutosDesconto = parseInt(document.getElementById('tempo-almoco').value) || 0;
+        }
+
+        // Salva os minutos de almoço diretamente na coluna correspondente do banco
+        await registrarPonto('chegada_casa', minutosDesconto);
+    }
+
+    async function registrarPonto(coluna, minutosAlmoco Opcional = null) {
         const dataSelecionada = document.getElementById('data-ponto').value;
         const horaSelecionada = document.getElementById('hora-ponto').value + ":00"; 
         const transporte = document.getElementById('transporte').value;
-        const isFullTime = document.getElementById('fulltime').checked;
 
         if (!dataSelecionada || !horaSelecionada) {
             alert("Por favor, preencha a data e a hora antes de registrar.");
@@ -135,24 +174,30 @@
 
         let erro;
 
+        // Estrutura os dados dinamicamente. Reutiliza as colunas nativas salvando os minutos.
+        const pacoteDados = { [coluna]: horaSelecionada };
+        
+        // Se for o fechamento do dia, computamos a marcação de minutos
+        if (minutosAlmocoOpcional !== null) {
+            // Usamos a coluna almoco_fulltime de forma numérica ou adaptada para guardar os minutos de almoço salvos
+            pacoteDados['minutos_almoco'] = minutosAlmocoOpcional;
+        }
+
         if (dadosExistentes) {
-            const dadosUpdate = { [coluna]: horaSelecionada, almoco_fulltime: isFullTime };
-            if(coluna === 'saida_casa') dadosUpdate.meio_transporte = transporte;
+            if(coluna === 'saida_casa') pacoteDados.meio_transporte = transporte;
             
             const { error } = await conexaoSupabase
                 .from('registros_ponto')
-                .update(dadosUpdate)
+                .update(pacoteDados)
                 .eq('data', dataSelecionada);
             erro = error;
         } else {
+            pacoteDados.data = dataSelecionada;
+            pacoteDados.meio_transporte = transporte;
+            
             const { error } = await conexaoSupabase
                 .from('registros_ponto')
-                .insert([{
-                    data: dataSelecionada,
-                    [coluna]: horaSelecionada,
-                    meio_transporte: transporte,
-                    almoco_fulltime: isFullTime
-                }]);
+                .insert([pacoteDados]);
             erro = error;
         }
 
@@ -208,11 +253,12 @@
                 const [h1, m1] = r.saida_casa.split(':').map(Number);
                 const [h2, m2] = r.chegada_casa.split(':').map(Number);
                 
+                // Diferença bruta entre sair de casa e retornar
                 diferencaMinutos = (h2 * 60 + m2) - (h1 * 60 + m1);
                 
-                if (!r.almoco_fulltime) {
-                    diferencaMinutos -= 60; 
-                }
+                // Desconto inteligente com base nos minutos informados no banco (se existirem)
+                const descontoAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? Number(r.minutos_almoco) : 0;
+                diferencaMinutos -= descontoAlmoco;
 
                 if (diferencaMinutos > 0) {
                     const hrs = Math.floor(diferencaMinutos / 60);
@@ -247,7 +293,6 @@
         document.getElementById('total-mes').innerText = `${Math.floor(minutosMes / 60)}h ${(minutosMes % 60).toString().padStart(2, '0')}m`;
     }
 
-    // FUNÇÃO EXCLUSIVA PARA EXPORTAÇÃO EXCEL (FORMATO CSV COMPATÍVEL)
     async function exportarParaExcel() {
         const { data: registros, error } = await conexaoSupabase
             .from('registros_ponto')
@@ -259,12 +304,12 @@
             return;
         }
 
-        // Configura o cabeçalho com BOM para garantir os acentos corretos no Excel em português
         let conteudoCSV = "\uFEFF"; 
-        conteudoCSV += "Data;Saída Casa;Chegada Trabalho;Saída Trabalho;Chegada Casa;Sem Almoço (Full Time);Transporte\n";
+        conteudoCSV += "Data;Saída Casa;Chegada Trabalho;Saída Trabalho;Chegada Casa;Desconto Almoço (Minutos);Transporte\n";
 
         registros.forEach(r => {
-            conteudoCSV += `${r.data};${r.saida_casa || ""};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${r.chegada_casa || ""};${r.almoco_fulltime ? "Sim" : "Não"};${r.meio_transporte || ""}\n`;
+            const minAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? r.minutos_almoco : 0;
+            conteudoCSV += `${r.data};${r.saida_casa || ""};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${r.chegada_casa || ""};${minAlmoco};${r.meio_transporte || ""}\n`;
         });
 
         const blob = new Blob([conteudoCSV], { type: 'text/csv;charset=utf-8;' });
