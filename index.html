@@ -65,7 +65,7 @@
         </div>
 
         <div class="grid-botoes">
-            <button onclick="registrarPonto('chegada_trabalho')">🏢 Início de Jornada</button>
+            <button onclick="registrarPonto('entrada')">🏢 Início de Jornada</button>
             <button onclick="dispararFimJornada()" class="btn-success">🛠️ Fim de Jornada</button>
         </div>
 
@@ -101,7 +101,7 @@
                     <tr>
                         <th>Data</th>
                         <th>Tempo Trabalhado</th>
-                        <th>Forma de Trabalho</th>
+                        <th>Formas de Trabalho</th>
                     </tr>
                 </thead>
                 <tbody id="tabela-corpo">
@@ -150,16 +150,16 @@
 
     async function confirmarFimJornadaComAlmoco() {
         const teveAlmoco = document.getElementById('teve-almoco').checked;
-        let minutesDesconto = 0;
+        let minutosDesconto = 0;
 
         if (teveAlmoco) {
-            minutesDesconto = parseInt(document.getElementById('tempo-almoco').value) || 0;
+            minutosDesconto = parseInt(document.getElementById('tempo-almoco').value) || 0;
         }
 
-        await registrarPonto('saida_trabalho', minutesDesconto);
+        await registrarPonto('saida', minutosDesconto);
     }
 
-    async function registrarPonto(coluna, minutosAlmocoOpcional = null) {
+    async function registrarPonto(tipoMovimento, minutosAlmocoOpcional = null) {
         const dataSelecionada = document.getElementById('data-ponto').value;
         const horaSelecionada = document.getElementById('hora-ponto').value + ":00"; 
         const trabalho = document.getElementById('forma-trabalho').value;
@@ -169,19 +169,21 @@
             return;
         }
 
-        const dataChave = dataSelecionada.replace(/-/g, '_');
+        const timestampId = new Date().getTime(); 
 
-        const pacoteDados = { [coluna]: horaSelecionada };
+        const novoRegistro = {
+            data: dataSelecionada,
+            hora: horaSelecionada,
+            tipo: tipoMovimento, 
+            forma_trabalho: trabalho
+        };
+
         if (minutosAlmocoOpcional !== null) {
-            pacoteDados['minutos_almoco'] = minutosAlmocoOpcional;
+            novoRegistro['minutos_almoco'] = minutosAlmocoOpcional;
         }
-        if (coluna === 'chegada_trabalho') {
-            pacoteDados['forma_trabalho'] = trabalho;
-        }
-        pacoteDados['data'] = dataSelecionada;
 
         try {
-            await bancoDados.ref('registros_ponto/' + dataChave).update(pacoteDados);
+            await bancoDados.ref('batidas_ponto/' + timestampId).set(novoRegistro);
             alert("Ponto gravado com sucesso!");
             inicializarCamposDataHora();
             carregarHistoricoREmRelatorios();
@@ -208,11 +210,20 @@
 
     async function carregarHistoricoREmRelatorios() {
         try {
-            const snapshot = await bancoDados.ref('registros_ponto').once('value');
+            const snapshot = await bancoDados.ref('batidas_ponto').once('value');
             const dadosObjeto = snapshot.val() || {};
-            
-            const registros = Object.values(dadosObjeto).sort((a, b) => b.data.localeCompare(a.data));
+            const batidas = Object.values(dadosObjeto);
 
+            // Agrupa todas as batidas por data para calcular os intervalos corretamente
+            const diasAgrupados = {};
+            batidas.forEach(b => {
+                if (!diasAgrupados[b.data]) {
+                    diasAgrupados[b.data] = [];
+                }
+                diasAgrupados[b.data].push(b);
+            });
+
+            const datasOrdenadas = Object.keys(diasAgrupados).sort((a, b) => b.localeCompare(a));
             const tbody = document.getElementById('tabela-corpo');
             tbody.innerHTML = "";
 
@@ -224,48 +235,52 @@
             const mesAtual = hojeData.getMonth();
             const anoAtual = hojeData.getFullYear();
 
-            registros.forEach(r => {
-                let textoTotalDia = "--:--";
-                let diferencaMinutos = 0;
+            datasOrdenadas.forEach(dataStr => {
+                const batidasDoDia = diasAgrupados[dataStr].sort((a, b) => a.hora.localeCompare(b.hora));
                 
-                if (r.chegada_trabalho && r.saida_trabalho) {
-                    const [h1, m1] = r.chegada_trabalho.split(':').map(Number);
-                    const [h2, m2] = r.saida_trabalho.split(':').map(Number);
-                    
-                    diferencaMinutos = (h2 * 60 + m2) - (h1 * 60 + m1);
-                    
-                    const descontoAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? Number(r.minutos_almoco) : 0;
-                    diferencaMinutos -= descontoAlmoco;
+                let minutosTrabalhadosNoDia = 0;
+                let formasDoDia = new Set();
+                let horaEntradaAtual = null;
 
-                    if (diferencaMinutos > 0) {
-                        const hrs = Math.floor(diferencaMinutos / 60);
-                        const mins = diferencaMinutos % 60;
-                        textoTotalDia = `${hrs}h ${mins.toString().padStart(2, '0')}m`;
-                    } else {
-                        diferencaMinutos = 0;
+                batidasDoDia.forEach(b => {
+                    if (b.forma_trabalho) {
+                        formasDoDia.add(b.forma_trabalho === 'Home Office' ? '🏠 HO' : '📋 Vistoria');
                     }
-                }
+                    
+                    if (b.tipo === 'entrada') {
+                        horaEntradaAtual = b.hora;
+                    } else if (b.tipo === 'saida' && horaEntradaAtual) {
+                        const [h1, m1] = horaEntradaAtual.split(':').map(Number);
+                        const [h2, m2] = b.hora.split(':').map(Number);
+                        
+                        let diferenca = (h2 * 60 + m2) - (h1 * 60 + m1);
+                        const descontoAlmoco = b.minutos_almoco ? Number(b.minutos_almoco) : 0;
+                        diferenca -= descontoAlmoco;
+                        
+                        if (diferenca > 0) minutosTrabalhadosNoDia += diferenca;
+                        horaEntradaAtual = null; // reseta para o próximo par de batidas do dia
+                    }
+                });
 
-                const dataObjeto = new Date(r.data + 'T00:00:00');
+                const dataObjeto = new Date(dataStr + 'T00:00:00');
+                if (dataObjeto >= segunda && dataObjeto <= domingo) minutosSemana += minutosTrabalhadosNoDia;
+                if (dataObjeto.getMonth() === mesAtual && dataObjeto.getFullYear() === anoAtual) minutesMes += minutosTrabalhadosNoDia;
 
-                if (dataObjeto >= segunda && dataObjeto <= domingo) {
-                    minutosSemana += diferencaMinutos;
-                }
-
-                if (dataObjeto.getMonth() === mesAtual && dataObjeto.getFullYear() === anoAtual) {
-                    minutesMes += diferencaMinutos;
+                let textoTotalDia = "--:--";
+                if (minutosTrabalhadosNoDia > 0) {
+                    const hrs = Math.floor(minutosTrabalhadosNoDia / 60);
+                    const mins = minutosTrabalhadosNoDia % 60;
+                    textoTotalDia = `${hrs}h ${mins.toString().padStart(2, '0')}m`;
                 }
 
                 const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
-                
-                // Define o emoji com base na string salva
-                const exibirForma = r.forma_trabalho ? (r.forma_trabalho === 'Home Office' ? '🏠 Home Office' : '📋 Vistoria Cautelar') : '--';
+                const formasExibir = formasDoDia.size > 0 ? Array.from(formasDoDia).join(' / ') : '--';
 
                 tbody.innerHTML += `
                     <tr>
                         <td>${dataFormatada}</td>
                         <td>${textoTotalDia}</td>
-                        <td>${exibirForma}</td>
+                        <td>${formasExibir}</td>
                     </tr>
                 `;
             });
@@ -279,21 +294,22 @@
 
     async function exportarParaExcel() {
         try {
-            const snapshot = await bancoDados.ref('registros_ponto').once('value');
+            const snapshot = await bancoDados.ref('batidas_ponto').once('value');
             const dadosObjeto = snapshot.val() || {};
-            const registros = Object.values(dadosObjeto).sort((a, b) => b.data.localeCompare(a.data));
+            const batidas = Object.values(dadosObjeto).sort((a, b) => a.data.localeCompare(b.data) || a.hora.localeCompare(b.hora));
 
-            if (registros.length === 0) {
+            if (batidas.length === 0) {
                 alert("Nenhum dado encontrado para exportar.");
                 return;
             }
 
             let conteudoCSV = "\uFEFF"; 
-            conteudoCSV += "Data;Início Jornada;Fim de Jornada;Desconto Almoço (Minutos);Forma de Trabalho\n";
+            conteudoCSV += "Data;Hora;Movimento;Desconto Almoço (Minutos);Forma de Trabalho\n";
 
-            registros.forEach(r => {
-                const minAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? r.minutos_almoco : 0;
-                conteudoCSV += `${r.data};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${minAlmoco};${r.forma_trabalho || ""}\n`;
+            batidas.forEach(b => {
+                const minAlmoco = b.minutos_almoco || 0;
+                const acao = b.tipo === 'entrada' ? 'Início Jornada' : 'Fim Jornada';
+                conteudoCSV += `${b.data};${b.hora};${acao};${minAlmoco};${b.forma_trabalho || ""}\n`;
             });
 
             const blob = new Blob([conteudoCSV], { type: 'text/csv;charset=utf-8;' });
