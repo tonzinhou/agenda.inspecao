@@ -57,10 +57,10 @@
         </div>
         
         <div class="input-group">
-            <label for="transporte">Meio de Transporte:</label>
-            <select id="transporte">
-                <option value="Carro">🚗 Carro</option>
-                <option value="Transporte Público">🚌 Transporte Público</option>
+            <label for="forma-trabalho">Forma de Trabalho:</label>
+            <select id="forma-trabalho">
+                <option value="Home Office">🏠 Home Office</option>
+                <option value="Vistoria Cautelar">📋 Vistoria Cautelar</option>
             </select>
         </div>
 
@@ -100,8 +100,8 @@
                 <thead>
                     <tr>
                         <th>Data</th>
-                        <th>Total</th>
-                        <th>Cond.</th>
+                        <th>Tempo Trabalhado</th>
+                        <th>Forma de Trabalho</th>
                     </tr>
                 </thead>
                 <tbody id="tabela-corpo">
@@ -112,7 +112,6 @@
 </div>
 
 <script>
-    // Configurações com os dados do seu aplicativo Firebase
     const firebaseConfig = {
         apiKey: "AIzaSyCxV13m" + "O6K9g9l8X_2D" + "xL3S6qWpZt8R4Y",
         authDomain: "controle-de-horas-78e02.firebaseapp.com",
@@ -123,7 +122,6 @@
         appId: "1:107903444886:web:91ff373f4af31d74df9fb7"
     };
 
-    // Inicializa o Firebase
     firebase.initializeApp(firebaseConfig);
     const bancoDados = firebase.database();
 
@@ -152,19 +150,19 @@
 
     async function confirmarFimJornadaComAlmoco() {
         const teveAlmoco = document.getElementById('teve-almoco').checked;
-        let minutosDesconto = 0;
+        let minutesDesconto = 0;
 
         if (teveAlmoco) {
-            minutosDesconto = parseInt(document.getElementById('tempo-almoco').value) || 0;
+            minutesDesconto = parseInt(document.getElementById('tempo-almoco').value) || 0;
         }
 
-        await registrarPonto('saida_trabalho', minutosDesconto);
+        await registrarPonto('saida_trabalho', minutesDesconto);
     }
 
     async function registrarPonto(coluna, minutosAlmocoOpcional = null) {
         const dataSelecionada = document.getElementById('data-ponto').value;
         const horaSelecionada = document.getElementById('hora-ponto').value + ":00"; 
-        const transporte = document.getElementById('transporte').value;
+        const trabalho = document.getElementById('forma-trabalho').value;
 
         if (!dataSelecionada || !horaSelecionada) {
             alert("Por favor, preencha a data e a hora antes de registrar.");
@@ -178,7 +176,7 @@
             pacoteDados['minutos_almoco'] = minutosAlmocoOpcional;
         }
         if (coluna === 'chegada_trabalho') {
-            pacoteDados['meio_transporte'] = transporte;
+            pacoteDados['forma_trabalho'] = trabalho;
         }
         pacoteDados['data'] = dataSelecionada;
 
@@ -259,11 +257,15 @@
                 }
 
                 const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
+                
+                // Define o emoji com base na string salva
+                const exibirForma = r.forma_trabalho ? (r.forma_trabalho === 'Home Office' ? '🏠 Home Office' : '📋 Vistoria Cautelar') : '--';
+
                 tbody.innerHTML += `
                     <tr>
                         <td>${dataFormatada}</td>
                         <td>${textoTotalDia}</td>
-                        <td>${r.meio_transporte === 'Carro' ? '🚗' : '🚌'}</td>
+                        <td>${exibirForma}</td>
                     </tr>
                 `;
             });
@@ -287,11 +289,11 @@
             }
 
             let conteudoCSV = "\uFEFF"; 
-            conteudoCSV += "Data;Início Jornada;Fim de Jornada;Desconto Almoço (Minutos);Transporte\n";
+            conteudoCSV += "Data;Início Jornada;Fim de Jornada;Desconto Almoço (Minutos);Forma de Trabalho\n";
 
             registros.forEach(r => {
                 const minAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? r.minutos_almoco : 0;
-                conteudoCSV += `${r.data};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${minAlmoco};${r.meio_transporte || ""}\n`;
+                conteudoCSV += `${r.data};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${minAlmoco};${r.forma_trabalho || ""}\n`;
             });
 
             const blob = new Blob([conteudoCSV], { type: 'text/csv;charset=utf-8;' });
