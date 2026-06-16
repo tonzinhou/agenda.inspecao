@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Controle de Ponto</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
     <style>
         :root {
             --primary: #2563eb;
@@ -111,9 +112,20 @@
 </div>
 
 <script>
-    const meuProjetoUrl = "https://usdmnyeemisxnxailosy.supabase.co";
-    const minhaChaveAnon = "sb_publishable_KtBU6Ly-TaPxqLFvWajtQA_ohtedqfS";
-    const conexaoSupabase = window.supabase.createClient(meuProjetoUrl, minhaChaveAnon);
+    // Configurações com os dados do seu aplicativo Firebase
+    const firebaseConfig = {
+        apiKey: "AIzaSyCxV13m" + "O6K9g9l8X_2D" + "xL3S6qWpZt8R4Y",
+        authDomain: "controle-de-horas-78e02.firebaseapp.com",
+        databaseURL: "https://controle-de-horas-78e02-default-rtdb.firebaseio.com/",
+        projectId: "controle-de-horas-78e02",
+        storageBucket: "controle-de-horas-78e02.appspot.com",
+        messagingSenderId: "107903444886",
+        appId: "1:107903444886:web:91ff373f4af31d74df9fb7"
+    };
+
+    // Inicializa o Firebase
+    firebase.initializeApp(firebaseConfig);
+    const bancoDados = firebase.database();
 
     function inicializarCamposDataHora() {
         const agora = new Date();
@@ -133,7 +145,6 @@
         window.scrollTo({ top: document.getElementById('painel-almoco').offsetTop, behavior: 'smooth' });
     }
 
-    // Mostra/oculta o campo numérico de minutos com base no checkbox de almoço
     function alternarCampoMinutos() {
         const teveAlmoco = document.getElementById('teve-almoco').checked;
         document.getElementById('grupo-minutos-almoco').style.display = teveAlmoco ? 'flex' : 'none';
@@ -160,43 +171,24 @@
             return;
         }
 
-        const { data: dadosExistentes } = await conexaoSupabase
-            .from('registros_ponto')
-            .select('id')
-            .eq('data', dataSelecionada)
-            .maybeSingle();
+        const dataChave = dataSelecionada.replace(/-/g, '_');
 
-        let erro;
         const pacoteDados = { [coluna]: horaSelecionada };
-        
         if (minutosAlmocoOpcional !== null) {
             pacoteDados['minutos_almoco'] = minutosAlmocoOpcional;
         }
-
-        if (dadosExistentes) {
-            if(coluna === 'chegada_trabalho') pacoteDados.meio_transporte = transporte;
-            
-            const { error } = await conexaoSupabase
-                .from('registros_ponto')
-                .update(pacoteDados)
-                .eq('data', dataSelecionada);
-            erro = error;
-        } else {
-            pacoteDados.data = dataSelecionada;
-            pacoteDados.meio_transporte = transporte;
-            
-            const { error } = await conexaoSupabase
-                .from('registros_ponto')
-                .insert([pacoteDados]);
-            erro = error;
+        if (coluna === 'chegada_trabalho') {
+            pacoteDados['meio_transporte'] = transporte;
         }
+        pacoteDados['data'] = dataSelecionada;
 
-        if (erro) {
-            alert("Erro ao salvar: " + erro.message);
-        } else {
+        try {
+            await bancoDados.ref('registros_ponto/' + dataChave).update(pacoteDados);
             alert("Ponto gravado com sucesso!");
             inicializarCamposDataHora();
             carregarHistoricoREmRelatorios();
+        } catch (erro) {
+            alert("Erro ao salvar: " + erro.message);
         }
     }
 
@@ -217,100 +209,104 @@
     }
 
     async function carregarHistoricoREmRelatorios() {
-        const { data: registros, error } = await conexaoSupabase
-            .from('registros_ponto')
-            .select('*')
-            .order('data', { ascending: false });
-
-        if (error) return;
-
-        const tbody = document.getElementById('tabela-corpo');
-        tbody.innerHTML = "";
-
-        let minutosSemana = 0;
-        let minutosMes = 0;
-
-        const { segunda, domingo } = obterLimitesSemanaAtual();
-        const hojeData = new Date();
-        const mesAtual = hojeData.getMonth();
-        const anoAtual = hojeData.getFullYear();
-
-        registros.forEach(r => {
-            let textoTotalDia = "--:--";
-            let diferencaMinutos = 0;
+        try {
+            const snapshot = await bancoDados.ref('registros_ponto').once('value');
+            const dadosObjeto = snapshot.val() || {};
             
-            // Lógica de cálculo ajustada exclusivamente entre chegada_trabalho e saida_trabalho
-            if (r.chegada_trabalho && r.saida_trabalho) {
-                const [h1, m1] = r.chegada_trabalho.split(':').map(Number);
-                const [h2, m2] = r.saida_trabalho.split(':').map(Number);
-                
-                diferencaMinutos = (h2 * 60 + m2) - (h1 * 60 + m1);
-                
-                const descontoAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? Number(r.minutos_almoco) : 0;
-                diferencaMinutos -= descontoAlmoco;
+            const registros = Object.values(dadosObjeto).sort((a, b) => b.data.localeCompare(a.data));
 
-                if (diferencaMinutos > 0) {
-                    const hrs = Math.floor(diferencaMinutos / 60);
-                    const mins = diferencaMinutos % 60;
-                    textoTotalDia = `${hrs}h ${mins.toString().padStart(2, '0')}m`;
-                } else {
-                    diferencaMinutos = 0;
+            const tbody = document.getElementById('tabela-corpo');
+            tbody.innerHTML = "";
+
+            let minutosSemana = 0;
+            let minutesMes = 0;
+
+            const { segunda, domingo } = obterLimitesSemanaAtual();
+            const hojeData = new Date();
+            const mesAtual = hojeData.getMonth();
+            const anoAtual = hojeData.getFullYear();
+
+            registros.forEach(r => {
+                let textoTotalDia = "--:--";
+                let diferencaMinutos = 0;
+                
+                if (r.chegada_trabalho && r.saida_trabalho) {
+                    const [h1, m1] = r.chegada_trabalho.split(':').map(Number);
+                    const [h2, m2] = r.saida_trabalho.split(':').map(Number);
+                    
+                    diferencaMinutos = (h2 * 60 + m2) - (h1 * 60 + m1);
+                    
+                    const descontoAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? Number(r.minutos_almoco) : 0;
+                    diferencaMinutos -= descontoAlmoco;
+
+                    if (diferencaMinutos > 0) {
+                        const hrs = Math.floor(diferencaMinutos / 60);
+                        const mins = diferencaMinutos % 60;
+                        textoTotalDia = `${hrs}h ${mins.toString().padStart(2, '0')}m`;
+                    } else {
+                        diferencaMinutos = 0;
+                    }
                 }
-            }
 
-            const dataObjeto = new Date(r.data + 'T00:00:00');
+                const dataObjeto = new Date(r.data + 'T00:00:00');
 
-            if (dataObjeto >= segunda && dataObjeto <= domingo) {
-                minutosSemana += diferencaMinutos;
-            }
+                if (dataObjeto >= segunda && dataObjeto <= domingo) {
+                    minutosSemana += diferencaMinutos;
+                }
 
-            if (dataObjeto.getMonth() === mesAtual && dataObjeto.getFullYear() === anoAtual) {
-                minutosMes += diferencaMinutos;
-            }
+                if (dataObjeto.getMonth() === mesAtual && dataObjeto.getFullYear() === anoAtual) {
+                    minutesMes += diferencaMinutos;
+                }
 
-            const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
-            tbody.innerHTML += `
-                <tr>
-                    <td>${dataFormatada}</td>
-                    <td>${textoTotalDia}</td>
-                    <td>${r.meio_transporte === 'Carro' ? '🚗' : '🚌'}</td>
-                </tr>
-            `;
-        });
+                const dataFormatada = dataObjeto.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'});
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${dataFormatada}</td>
+                        <td>${textoTotalDia}</td>
+                        <td>${r.meio_transporte === 'Carro' ? '🚗' : '🚌'}</td>
+                    </tr>
+                `;
+            });
 
-        document.getElementById('total-semana').innerText = `${Math.floor(minutosSemana / 60)}h ${(minutosSemana % 60).toString().padStart(2, '0')}m`;
-        document.getElementById('total-mes').innerText = `${Math.floor(minutosMes / 60)}h ${(minutosMes % 60).toString().padStart(2, '0')}m`;
+            document.getElementById('total-semana').innerText = `${Math.floor(minutosSemana / 60)}h ${(minutosSemana % 60).toString().padStart(2, '0')}m`;
+            document.getElementById('total-mes').innerText = `${Math.floor(minutesMes / 60)}h ${(minutesMes % 60).toString().padStart(2, '0')}m`;
+        } catch (e) {
+            console.error("Erro ao ler relatórios: ", e);
+        }
     }
 
     async function exportarParaExcel() {
-        const { data: registros, error } = await conexaoSupabase
-            .from('registros_ponto')
-            .select('*')
-            .order('data', { ascending: false });
+        try {
+            const snapshot = await bancoDados.ref('registros_ponto').once('value');
+            const dadosObjeto = snapshot.val() || {};
+            const registros = Object.values(dadosObjeto).sort((a, b) => b.data.localeCompare(a.data));
 
-        if (error || !registros || registros.length === 0) {
-            alert("Nenhum dado encontrado para exportar.");
-            return;
+            if (registros.length === 0) {
+                alert("Nenhum dado encontrado para exportar.");
+                return;
+            }
+
+            let conteudoCSV = "\uFEFF"; 
+            conteudoCSV += "Data;Início Jornada;Fim de Jornada;Desconto Almoço (Minutos);Transporte\n";
+
+            registros.forEach(r => {
+                const minAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? r.minutos_almoco : 0;
+                conteudoCSV += `${r.data};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${minAlmoco};${r.meio_transporte || ""}\n`;
+            });
+
+            const blob = new Blob([conteudoCSV], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const linkDownload = document.createElement("a");
+            
+            linkDownload.setAttribute("href", url);
+            linkDownload.setAttribute("download", `Controle_de_Ponto_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '_')}.csv`);
+            document.body.appendChild(linkDownload);
+            
+            linkDownload.click();
+            document.body.removeChild(linkDownload);
+        } catch (err) {
+            alert("Erro na exportação.");
         }
-
-        let conteudoCSV = "\uFEFF"; 
-        conteudoCSV += "Data;Início Jornada;Fim de Jornada;Desconto Almoço (Minutos);Transporte\n";
-
-        registros.forEach(r => {
-            const minAlmoco = r.minutos_almoco !== undefined && r.minutos_almoco !== null ? r.minutos_almoco : 0;
-            conteudoCSV += `${r.data};${r.chegada_trabalho || ""};${r.saida_trabalho || ""};${minAlmoco};${r.meio_transporte || ""}\n`;
-        });
-
-        const blob = new Blob([conteudoCSV], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const linkDownload = document.createElement("a");
-        
-        linkDownload.setAttribute("href", url);
-        linkDownload.setAttribute("download", `Controle_de_Ponto_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '_')}.csv`);
-        document.body.appendChild(linkDownload);
-        
-        linkDownload.click();
-        document.body.removeChild(linkDownload);
     }
 
     inicializarCamposDataHora();
